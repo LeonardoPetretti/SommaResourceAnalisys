@@ -1,0 +1,104 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============ HELPERS ============
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isActive() {
+      return isSignedIn() && userExists() && userDoc().active == true;
+    }
+
+    function role() {
+      return userExists() ? userDoc().role : 'viewer';
+    }
+
+    function isAdmin() {
+      return isActive() && role() == 'admin';
+    }
+
+    function isManager() {
+      return isActive() && (role() == 'admin' || role() == 'manager');
+    }
+
+    function isViewer() {
+      return isActive();
+    }
+
+    // ============ USERS ============
+    // Auto-criação na primeira autenticação; updates apenas por admin.
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // Self-bootstrap: usuário pode criar seu próprio documento básico
+      allow create: if isSignedIn()
+                    && request.auth.uid == uid
+                    && request.resource.data.email == request.auth.token.email;
+      // Atualizações apenas pelo próprio (lastLogin) ou admin (gerenciamento)
+      allow update: if isSignedIn() && (
+        (request.auth.uid == uid &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.active == resource.data.active) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ============ RESOURCES (consultores) ============
+    match /resources/{id} {
+      allow read: if isViewer();
+      allow create, update: if isManager();
+      allow delete: if isAdmin();
+    }
+
+    // ============ PROJECTS ============
+    match /projects/{id} {
+      allow read: if isViewer();
+      allow create, update: if isManager();
+      allow delete: if isAdmin();
+    }
+
+    // ============ ALLOCATIONS ============
+    match /allocations/{id} {
+      allow read: if isViewer();
+      allow create, update: if isManager();
+      allow delete: if isManager(); // gestor também pode remover alocações
+    }
+
+    // ============ PIPELINE ============
+    match /pipeline/{id} {
+      allow read: if isViewer();
+      allow create, update: if isManager();
+      allow delete: if isManager();
+    }
+
+    // ============ AREAS ============
+    // Lista mestre de áreas / frentes de negócio.
+    match /areas/{id} {
+      allow read: if isViewer();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ============ LOGS ============
+    match /logs/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

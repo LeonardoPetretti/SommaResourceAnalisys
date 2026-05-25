@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ===== SOMMA — Light theme ===== */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+
+    /* Verde SOMMA */
+    --primary: 95 70% 38%;
+    --primary-foreground: 0 0% 100%;
+    --somma-green: 95 70% 45%;
+    --somma-green-bright: 95 80% 55%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 95 70% 95%;
+    --accent-foreground: 95 70% 25%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 95 70% 45%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* ===== SOMMA — Dark theme (identidade principal) ===== */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+
+    /* Verde SOMMA — brilhante no preto */
+    --primary: 95 75% 52%;
+    --primary-foreground: 0 0% 6%;
+    --somma-green: 95 75% 52%;
+    --somma-green-bright: 95 90% 60%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 65%;
+    --accent: 95 50% 15%;
+    --accent-foreground: 95 75% 65%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 0 0% 0%;
+
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 95 75% 52%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+}
+
+/* ===== SOMMA — Acentos visuais ===== */
+@layer components {
+  .somma-gradient {
+    background:
+      radial-gradient(
+        ellipse 80% 60% at 50% 40%,
+        hsl(var(--somma-green) / 0.18) 0%,
+        transparent 70%
+      ),
+      hsl(var(--background));
+  }
+  .somma-login-bg {
+    background:
+      radial-gradient(
+        ellipse 70% 50% at 50% 50%,
+        hsl(var(--somma-green) / 0.35) 0%,
+        transparent 65%
+      ),
+      linear-gradient(180deg, #000 0%, #050505 100%);
+  }
+  .somma-glow {
+    box-shadow:
+      0 0 0 1px hsl(var(--somma-green) / 0.25),
+      0 0 24px hsl(var(--somma-green) / 0.15);
+  }
+  .somma-text-accent {
+    color: hsl(var(--somma-green));
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--muted)); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--somma-green) / 0.6); }

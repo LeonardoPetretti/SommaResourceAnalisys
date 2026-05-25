@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "allocations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "resourceId", "order": "ASCENDING" },
+        { "fieldPath": "startDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "allocations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "projectId", "order": "ASCENDING" },
+        { "fieldPath": "startDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "projects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "priority", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
