@@ -19,6 +19,7 @@ import { useProjects } from '@/hooks/useProjects';
 import { useAllocations } from '@/hooks/useAllocations';
 import { parsePercent, formatPercent, rangesOverlap } from '@/lib/utils';
 import type { Allocation } from '@/types';
+import { PROJECT_PHASES } from '@/types';
 
 interface Props {
   open: boolean;
@@ -146,7 +147,18 @@ export function AllocationFormDialog({ open, onOpenChange, allocation }: Props) 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Fase</Label>
-                <Input value={phase} onChange={(e) => setPhase(e.target.value)} placeholder="Ex.: Discovery" />
+                <Select value={phase} onValueChange={setPhase}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a fase..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROJECT_PHASES.map((ph) => (
+                      <SelectItem key={ph} value={ph}>
+                        {ph}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>FTE</Label>

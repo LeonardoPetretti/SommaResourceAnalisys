@@ -63,6 +63,7 @@ import {
 } from '@/lib/timeBuckets';
 import { freeCapacity, normSkill, resourceHasSkill } from '@/lib/skillsAnalysis';
 import type { Allocation, Project, Resource } from '@/types';
+import { PROJECT_PHASES } from '@/types';
 
 const WEEKS_AHEAD = 24; // 6 meses
 const HORIZON_DAYS = WEEKS_AHEAD * 7;
@@ -93,6 +94,7 @@ type Drill =
   | { kind: 'idle-capacity' }
   | { kind: 'projects-by-status'; status: string }
   | { kind: 'projects-by-priority'; priority: string }
+  | { kind: 'phase'; phase: string }
   | { kind: 'heatmap-cell'; area: string; weekStart: string; weekEnd: string; weekLabel: string }
   | {
       kind: 'heatmap-resource-cell';
@@ -337,6 +339,28 @@ export function DashboardPage() {
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
   }, [fProjects]);
 
+  // ===== Distribuição por Fase (pipeline de execução dos projetos) =====
+  const phaseData = useMemo(() => {
+    // Considera alocações vigentes (período toca hoje)
+    const today = new Date().toISOString().slice(0, 10);
+    const aggregate = new Map<string, { count: number; fte: number }>();
+    for (const ph of PROJECT_PHASES) aggregate.set(ph, { count: 0, fte: 0 });
+    for (const a of fAllocations) {
+      if (!(a.startDate <= today && a.endDate >= today)) continue;
+      const ph = (a.phase ?? '').trim();
+      if (!ph) continue;
+      const cur = aggregate.get(ph) ?? { count: 0, fte: 0 };
+      cur.count += 1;
+      cur.fte += a.fte ?? 0;
+      aggregate.set(ph, cur);
+    }
+    return PROJECT_PHASES.map((name) => ({
+      name,
+      count: aggregate.get(name)?.count ?? 0,
+      fte: Number((aggregate.get(name)?.fte ?? 0).toFixed(2)),
+    }));
+  }, [fAllocations]);
+
   // ===== Carga atual por recurso (top 10) =====
   const resourceLoad = useMemo(() => {
     return fResources
@@ -526,6 +550,57 @@ export function DashboardPage() {
         </Card>
       </div>
 
+      {/* Pipeline de Fases de Projeto */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Distribuição por Fase de Projeto</CardTitle>
+          <CardDescription>
+            Pipeline de execução: quantas alocações vigentes e quanto FTE somado em cada
+            fase do ciclo (Design → Hipercare). Clique numa barra para ver as alocações.
+            {filterByArea && (
+              <span className="ml-1 somma-text-accent">
+                · Filtro: área "{dashArea}"
+              </span>
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="h-72">
+          {phaseData.every((p) => p.count === 0) ? (
+            <EmptyChart />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={phaseData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
+                <YAxis allowDecimals={false} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip
+                  formatter={(value: any, name: string) =>
+                    name === 'count'
+                      ? [`${value} alocação(ões)`, 'Quantidade']
+                      : [formatPercent(Number(value)), 'FTE somado']
+                  }
+                />
+                <Legend
+                  formatter={(v: string) => (v === 'count' ? 'Quantidade' : 'FTE somado')}
+                />
+                <Bar
+                  dataKey="count"
+                  fill="hsl(var(--primary))"
+                  onClick={(d: any) => d?.name && setDrill({ kind: 'phase', phase: d.name })}
+                  style={{ cursor: 'pointer' }}
+                />
+                <Bar
+                  dataKey="fte"
+                  fill="hsl(var(--somma-green-bright))"
+                  onClick={(d: any) => d?.name && setDrill({ kind: 'phase', phase: d.name })}
+                  style={{ cursor: 'pointer' }}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Mapa de Calor Ocupacional */}
       <Card>
         <CardHeader>
@@ -601,9 +676,17 @@ export function DashboardPage() {
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
               Ranking de Disponibilidade por Skill
+              {filterByArea && (
+                <Badge variant="outline" className="ml-2 text-[10px]">
+                  Área: {dashArea}
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
-              FTE livre no horizonte (clique para ver os recursos)
+              FTE livre no horizonte (clique para ver os recursos).
+              {filterByArea
+                ? ` Considera apenas recursos da área "${dashArea}".`
+                : ' Considera recursos de todas as áreas.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -945,6 +1028,22 @@ function DrillDialog({
       description = `${rows.length} projeto(s)`;
       openLink = { label: 'Abrir página Projetos', path: '/projects' };
       body = <ProjectsTable rows={rows} />;
+      break;
+    }
+
+    case 'phase': {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const rows = allocations.filter(
+        (a) =>
+          (a.phase ?? '').trim() === drill.phase &&
+          a.startDate <= todayIso &&
+          a.endDate >= todayIso
+      );
+      const totalFte = rows.reduce((s, a) => s + (a.fte ?? 0), 0);
+      title = `Fase: ${drill.phase}`;
+      description = `${rows.length} alocação(ões) vigentes nesta fase · ${formatPercent(totalFte)} FTE somado`;
+      openLink = { label: 'Abrir página Alocações', path: '/allocations' };
+      body = <AllocationsTable rows={rows} conflictIds={conflictIds} />;
       break;
     }
 

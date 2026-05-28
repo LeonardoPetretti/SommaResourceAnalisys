@@ -41,6 +41,19 @@ export interface Resource {
 export type ProjectStatus = 'Planejado' | 'Em Andamento' | 'Pausado' | 'Concluído' | 'Cancelado';
 export type ProjectPriority = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
 
+/** Fases padronizadas do ciclo de um projeto. */
+export const PROJECT_PHASES = [
+  'Design',
+  'Construction',
+  'SIT',
+  'UAT',
+  'Transition',
+  'Training',
+  'Cutover',
+  'Hipercare',
+] as const;
+export type ProjectPhase = (typeof PROJECT_PHASES)[number];
+
 export interface Project {
   id: string;
   name: string;
