@@ -95,6 +95,7 @@ type Drill =
   | { kind: 'projects-by-status'; status: string }
   | { kind: 'projects-by-priority'; priority: string }
   | { kind: 'phase'; phase: string }
+  | { kind: 'weekday'; weekday: string; weekdayIdx: number }
   | { kind: 'heatmap-cell'; area: string; weekStart: string; weekEnd: string; weekLabel: string }
   | {
       kind: 'heatmap-resource-cell';
@@ -655,7 +656,8 @@ export function DashboardPage() {
           <CardHeader>
             <CardTitle>Consumo por Dia da Semana</CardTitle>
             <CardDescription>
-              FTE-dias somados em {WEEKS_AHEAD} semanas
+              FTE-dias somados em {WEEKS_AHEAD} semanas. Cada barra = soma de FTE × dias que
+              caem naquele dia da semana. Clique para detalhar recursos e projetos contribuindo.
             </CardDescription>
           </CardHeader>
           <CardContent className="h-72">
@@ -664,8 +666,18 @@ export function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
                 <YAxis stroke="hsl(var(--muted-foreground))" />
-                <Tooltip />
-                <Bar dataKey="value" fill="hsl(var(--primary))" />
+                <Tooltip
+                  formatter={(value: any) => [`${value} FTE-dias`, 'Consumo']}
+                />
+                <Bar
+                  dataKey="value"
+                  fill="hsl(var(--primary))"
+                  onClick={(d: any, i: number) =>
+                    d?.name &&
+                    setDrill({ kind: 'weekday', weekday: d.name, weekdayIdx: i })
+                  }
+                  style={{ cursor: 'pointer' }}
+                />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -1044,6 +1056,137 @@ function DrillDialog({
       description = `${rows.length} alocação(ões) vigentes nesta fase · ${formatPercent(totalFte)} FTE somado`;
       openLink = { label: 'Abrir página Alocações', path: '/allocations' };
       body = <AllocationsTable rows={rows} conflictIds={conflictIds} />;
+      break;
+    }
+
+    case 'weekday': {
+      // Para o dia da semana selecionado, calcula a contribuição em FTE-dias
+      // de cada alocação (varrendo dia a dia o intervalo dentro do horizonte).
+      const hStart = new Date(horizonStart + 'T00:00:00');
+      const hEnd = new Date(horizonEnd + 'T00:00:00');
+      const targetIdx = drill.weekdayIdx; // 0=Seg..6=Dom
+
+      interface Contribution {
+        allocation: Allocation;
+        fteDays: number;
+        days: number;
+      }
+      const contributions: Contribution[] = [];
+
+      for (const a of allocations) {
+        const s = new Date(
+          (a.startDate > horizonStart ? a.startDate : horizonStart) + 'T00:00:00'
+        );
+        const e = new Date(
+          (a.endDate < horizonEnd ? a.endDate : horizonEnd) + 'T00:00:00'
+        );
+        if (s > e || s > hEnd || e < hStart) continue;
+        let days = 0;
+        const cur = new Date(s);
+        while (cur <= e) {
+          const jsDow = cur.getDay();
+          const idx = jsDow === 0 ? 6 : jsDow - 1; // 0=Seg..6=Dom
+          if (idx === targetIdx) days++;
+          cur.setDate(cur.getDate() + 1);
+        }
+        if (days > 0) {
+          contributions.push({
+            allocation: a,
+            days,
+            fteDays: Number((days * (a.fte ?? 0)).toFixed(2)),
+          });
+        }
+      }
+
+      contributions.sort((x, y) => y.fteDays - x.fteDays);
+      const totalFteDays = contributions.reduce((s, c) => s + c.fteDays, 0);
+
+      // Top por recurso
+      const byResource = new Map<string, { name: string; area: string; fteDays: number }>();
+      for (const c of contributions) {
+        const r = resources.find((x) => x.id === c.allocation.resourceId);
+        const key = c.allocation.resourceId;
+        const cur = byResource.get(key) ?? {
+          name: r?.name ?? c.allocation.resourceName ?? '—',
+          area: r?.area ?? '—',
+          fteDays: 0,
+        };
+        cur.fteDays = Number((cur.fteDays + c.fteDays).toFixed(2));
+        byResource.set(key, cur);
+      }
+      const topResources = Array.from(byResource.values())
+        .sort((a, b) => b.fteDays - a.fteDays)
+        .slice(0, 20);
+
+      // Top por projeto
+      const byProject = new Map<string, { name: string; fteDays: number }>();
+      for (const c of contributions) {
+        const key = c.allocation.projectId;
+        const cur = byProject.get(key) ?? {
+          name: c.allocation.projectName ?? '—',
+          fteDays: 0,
+        };
+        cur.fteDays = Number((cur.fteDays + c.fteDays).toFixed(2));
+        byProject.set(key, cur);
+      }
+      const topProjects = Array.from(byProject.values())
+        .sort((a, b) => b.fteDays - a.fteDays)
+        .slice(0, 20);
+
+      title = `${drill.weekday}: detalhamento`;
+      description = `${formatPercent(totalFteDays)} FTE-dias acumulados em ${drill.weekday} no horizonte ${horizonStart} → ${horizonEnd} · ${contributions.length} alocações contribuindo`;
+      openLink = { label: 'Abrir página Alocações', path: '/allocations' };
+      body = (
+        <div className="space-y-6">
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Top recursos contribuindo</h3>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Recurso</TableHead>
+                  <TableHead>Área</TableHead>
+                  <TableHead className="text-right">FTE-dias em {drill.weekday}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {topResources.map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium">{r.name}</TableCell>
+                    <TableCell>{r.area}</TableCell>
+                    <TableCell className="text-right">{formatPercent(r.fteDays)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Top projetos contribuindo</h3>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Projeto</TableHead>
+                  <TableHead className="text-right">FTE-dias em {drill.weekday}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {topProjects.map((p, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="text-right">{formatPercent(p.fteDays)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Alocações que tocam {drill.weekday}</h3>
+            <AllocationsTable
+              rows={contributions.map((c) => c.allocation)}
+              conflictIds={conflictIds}
+            />
+          </div>
+        </div>
+      );
       break;
     }
 
