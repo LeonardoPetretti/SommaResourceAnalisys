@@ -15,7 +15,8 @@ import { toast } from '@/hooks/useToast';
 import { createProject, updateProject } from '@/services/projectsService';
 import { useActiveAreaNames } from '@/hooks/useAreas';
 import { useAuthStore } from '@/store/authStore';
-import type { Project, ProjectPriority, ProjectStatus } from '@/types';
+import type { Project, ProjectPriority, ProjectStatus, ProjectPhasePlan } from '@/types';
+import { PROJECT_PHASES } from '@/types';
 
 const STATUSES: ProjectStatus[] = ['Planejado', 'Em Andamento', 'Pausado', 'Concluído', 'Cancelado'];
 const PRIORITIES: ProjectPriority[] = ['Baixa', 'Média', 'Alta', 'Crítica'];
@@ -34,6 +35,7 @@ export function ProjectFormDialog({ open, onOpenChange, project }: Props) {
   const [status, setStatus] = useState<ProjectStatus>('Planejado');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [phases, setPhases] = useState<ProjectPhasePlan[]>([]);
   const [saving, setSaving] = useState(false);
 
   const areaNames = useActiveAreaNames();
@@ -50,8 +52,30 @@ export function ProjectFormDialog({ open, onOpenChange, project }: Props) {
       setStatus(project?.status ?? 'Planejado');
       setStartDate(project?.startDate ?? '');
       setEndDate(project?.endDate ?? '');
+      setPhases(project?.phases ?? []);
     }
   }, [open, project, areaLocked, authUser?.area]);
+
+  const addPhase = (phase: string) => {
+    if (!phase || phases.some((p) => p.phase === phase)) return;
+    setPhases([...phases, { phase, startDate: '', endDate: '' }]);
+  };
+
+  const updatePhase = (idx: number, patch: Partial<ProjectPhasePlan>) => {
+    setPhases((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
+  };
+
+  const removePhase = (idx: number) => {
+    setPhases((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const availablePhases = PROJECT_PHASES.filter(
+    (ph) => !phases.some((p) => p.phase === ph)
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +89,15 @@ export function ProjectFormDialog({ open, onOpenChange, project }: Props) {
     }
     setSaving(true);
     try {
+      // Filtra apenas fases com datas válidas
+      const validPhases = phases
+        .map((p) => ({
+          phase: p.phase,
+          startDate: p.startDate || '',
+          endDate: p.endDate || '',
+        }))
+        .filter((p) => p.startDate && p.endDate);
+
       const payload = {
         name: name.trim(),
         area: area.trim(),
@@ -73,6 +106,7 @@ export function ProjectFormDialog({ open, onOpenChange, project }: Props) {
         status,
         startDate,
         endDate,
+        phases: validPhases,
       };
       if (project) {
         await updateProject(project.id, payload);
@@ -150,13 +184,81 @@ export function ProjectFormDialog({ open, onOpenChange, project }: Props) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Data Início</Label>
+                <Label>Data Início (geral do projeto)</Label>
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               </div>
               <div>
-                <Label>Data Fim</Label>
+                <Label>Data Fim (geral do projeto)</Label>
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
+            </div>
+
+            {/* Cronograma por fase */}
+            <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Cronograma por fase</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Defina início/fim de cada fase do ciclo (Design → Hipercare). Opcional. Usado no Timeline.
+                  </p>
+                </div>
+                {availablePhases.length > 0 && (
+                  <Select value="" onValueChange={(v) => v && addPhase(v)}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="+ Adicionar fase" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePhases.map((ph) => (
+                        <SelectItem key={ph} value={ph}>
+                          {ph}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {phases.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">
+                  Nenhuma fase adicionada.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {phases.map((p, i) => (
+                    <div
+                      key={p.phase}
+                      className="grid grid-cols-1 items-end gap-2 rounded-md bg-background p-2 sm:grid-cols-[120px_1fr_1fr_auto]"
+                    >
+                      <div className="font-medium text-sm">{p.phase}</div>
+                      <div>
+                        <Label className="text-[10px]">Início</Label>
+                        <Input
+                          type="date"
+                          value={p.startDate}
+                          onChange={(e) => updatePhase(i, { startDate: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10px]">Fim</Label>
+                        <Input
+                          type="date"
+                          value={p.endDate}
+                          onChange={(e) => updatePhase(i, { endDate: e.target.value })}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => removePhase(i)}
+                        title="Remover fase"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

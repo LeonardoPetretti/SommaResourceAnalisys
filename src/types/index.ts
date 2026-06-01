@@ -26,6 +26,17 @@ export interface Area {
   updatedAt?: Timestamp | Date | null;
 }
 
+/** Lista mestre de skills (tecnologias / competências) cadastradas. */
+export interface Skill {
+  id: string;
+  name: string;
+  category?: string; // opcional para agrupar (ex: "SAP", "Cloud", "Soft")
+  active: boolean;
+  description?: string;
+  createdAt?: Timestamp | Date | null;
+  updatedAt?: Timestamp | Date | null;
+}
+
 export interface Resource {
   id: string;
   name: string;
@@ -54,6 +65,13 @@ export const PROJECT_PHASES = [
 ] as const;
 export type ProjectPhase = (typeof PROJECT_PHASES)[number];
 
+/** Planejamento de uma fase do projeto. */
+export interface ProjectPhasePlan {
+  phase: string; // nome da fase (Design, Construction, etc.)
+  startDate: string; // ISO yyyy-mm-dd
+  endDate: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -61,8 +79,10 @@ export interface Project {
   client: string;
   priority: ProjectPriority;
   status: ProjectStatus;
-  startDate: string; // ISO date yyyy-mm-dd
-  endDate: string;
+  startDate: string; // ISO date yyyy-mm-dd — início geral do projeto
+  endDate: string; // fim geral
+  /** Cronograma por fase (Design → Hipercare). Opcional. */
+  phases?: ProjectPhasePlan[];
   createdAt?: Timestamp | Date | null;
   updatedAt?: Timestamp | Date | null;
 }

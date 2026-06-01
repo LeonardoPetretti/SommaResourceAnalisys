@@ -89,6 +89,13 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ============ SKILLS ============
+    // Lista mestre de skills (tecnologias / competências).
+    match /skills/{id} {
+      allow read: if isViewer();
+      allow create, update, delete: if isAdmin();
+    }
+
     // ============ LOGS ============
     match /logs/{id} {
       allow read: if isAdmin();

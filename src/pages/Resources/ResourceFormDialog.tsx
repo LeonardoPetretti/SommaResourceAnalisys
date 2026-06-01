@@ -10,7 +10,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -21,7 +20,10 @@ import {
 import { toast } from '@/hooks/useToast';
 import { createResource, updateResource } from '@/services/resourcesService';
 import { useActiveAreaNames } from '@/hooks/useAreas';
+import { useActiveSkillNames } from '@/hooks/useSkills';
 import { useAuthStore } from '@/store/authStore';
+import { Badge } from '@/components/ui/badge';
+import { X } from 'lucide-react';
 import type { Resource } from '@/types';
 import { parsePercent, formatPercent } from '@/lib/utils';
 
@@ -40,10 +42,33 @@ export function ResourceFormDialog({ open, onOpenChange, resource }: Props) {
   const [saving, setSaving] = useState(false);
 
   const areaNames = useActiveAreaNames();
+  const skillNames = useActiveSkillNames();
   const authUser = useAuthStore((s) => s.user);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   // Se o usuário tem área associada e não é admin, pré-fixa e trava o campo
   const areaLocked = !isAdmin() && !!authUser?.area;
+
+  // Skills selecionadas (array). Convertemos string CSV ↔ array.
+  const selectedSkills: string[] = skills
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const addSkill = (skill: string) => {
+    const trimmed = skill.trim();
+    if (!trimmed) return;
+    if (selectedSkills.some((s) => s.toLowerCase() === trimmed.toLowerCase())) return;
+    setSkills([...selectedSkills, trimmed].join(', '));
+  };
+
+  const removeSkill = (skill: string) => {
+    setSkills(selectedSkills.filter((s) => s !== skill).join(', '));
+  };
+
+  // Filtra skills disponíveis (não selecionadas ainda)
+  const availableSkills = skillNames.filter(
+    (s) => !selectedSkills.some((sel) => sel.toLowerCase() === s.toLowerCase())
+  );
 
   useEffect(() => {
     if (open) {
@@ -134,13 +159,49 @@ export function ResourceFormDialog({ open, onOpenChange, resource }: Props) {
               </div>
             </div>
             <div>
-              <Label>Skills Principais (separadas por vírgula)</Label>
-              <Textarea
-                rows={2}
-                value={skills}
-                onChange={(e) => setSkills(e.target.value)}
-                placeholder="React, Node.js, AWS"
-              />
+              <Label>Skills</Label>
+              {selectedSkills.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {selectedSkills.map((s) => (
+                    <Badge key={s} variant="outline" className="gap-1">
+                      {s}
+                      <button
+                        type="button"
+                        onClick={() => removeSkill(s)}
+                        className="hover:text-destructive"
+                        title="Remover"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <Select value="" onValueChange={(v) => v && addSkill(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="+ Adicionar skill da lista" />
+                </SelectTrigger>
+                <SelectContent>
+                  {skillNames.length === 0 && (
+                    <SelectItem value="__none__" disabled>
+                      Nenhuma skill cadastrada — vá em Configurações → Skills
+                    </SelectItem>
+                  )}
+                  {availableSkills.length === 0 && skillNames.length > 0 && (
+                    <SelectItem value="__all__" disabled>
+                      Todas as skills da lista já foram adicionadas
+                    </SelectItem>
+                  )}
+                  {availableSkills.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Lista alimentada por Configurações → Skills. Um recurso pode ter várias skills.
+              </p>
             </div>
             <div>
               <Label>Capacity (ex.: 100%, 0.75)</Label>

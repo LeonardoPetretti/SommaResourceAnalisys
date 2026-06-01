@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Shield, Database, Info, ShieldAlert, MapPin, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Shield, Database, Info, ShieldAlert, MapPin, Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,15 @@ import {
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { useUsers } from '@/hooks/useUsers';
 import { useAreas } from '@/hooks/useAreas';
+import { useSkills } from '@/hooks/useSkills';
+import { useResources } from '@/hooks/useResources';
+import {
+  createSkill,
+  updateSkill,
+  deleteSkill,
+  importExistingSkills,
+  deduplicateSkills,
+} from '@/services/skillsService';
 import { updateUserActive, updateUserRole, updateUserArea } from '@/services/usersService';
 import {
   createArea,
@@ -75,6 +84,7 @@ export function SettingsPage() {
       <div className="flex gap-2 border-b">
         <SettingsTab to="" icon={<Shield className="h-4 w-4" />} label="Usuários" end />
         <SettingsTab to="areas" icon={<MapPin className="h-4 w-4" />} label="Áreas" />
+        <SettingsTab to="skills" icon={<Sparkles className="h-4 w-4" />} label="Skills" />
         <SettingsTab to="data" icon={<Database className="h-4 w-4" />} label="Dados" />
         <SettingsTab to="about" icon={<Info className="h-4 w-4" />} label="Sobre" />
       </div>
@@ -82,6 +92,7 @@ export function SettingsPage() {
       <Routes>
         <Route index element={<UsersSection />} />
         <Route path="areas" element={<AreasSection />} />
+        <Route path="skills" element={<SkillsSection />} />
         <Route path="data" element={<DataSection />} />
         <Route path="about" element={<AboutSection />} />
         <Route path="*" element={<Navigate to="" replace />} />
@@ -658,6 +669,355 @@ function AreasSection() {
         onOpenChange={(v) => !v && setConfirmDelete(null)}
         title={`Excluir área "${confirmDelete?.name ?? ''}"?`}
         description="Atenção: registros já cadastrados com esta área não serão alterados. Considere apenas desativá-la (toggle 'Ativa') se quiser preservar histórico."
+        destructive
+        confirmText="Excluir"
+        onConfirm={handleDelete}
+      />
+    </div>
+  );
+}
+
+// ============================ SKILLS ============================
+function SkillsSection() {
+  const { data: skills = [], isLoading } = useSkills();
+  const { data: resources = [] } = useResources();
+  const [newName, setNewName] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [deduping, setDeduping] = useState(false);
+  const autoImportRanRef = useRef(false);
+
+  // Skills inferidas dos recursos (todas as skills usadas)
+  const inferredFromResources = (() => {
+    const set = new Set<string>();
+    for (const r of resources) for (const s of r.skills ?? []) if (s) set.add(s);
+    return Array.from(set).sort();
+  })();
+
+  // Duplicatas
+  const duplicateGroups = (() => {
+    const counts = new Map<string, number>();
+    for (const s of skills) {
+      const k = s.name.trim().toLowerCase();
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    let dup = 0;
+    for (const n of counts.values()) if (n > 1) dup += n - 1;
+    return dup;
+  })();
+
+  const handleDedupe = async () => {
+    setDeduping(true);
+    try {
+      const res = await deduplicateSkills();
+      toast({
+        title: res.removed === 0 ? 'Sem duplicatas' : 'Duplicatas removidas',
+        description:
+          res.removed === 0
+            ? 'Nada para remover.'
+            : `${res.removed} registro(s) duplicado(s) excluído(s).`,
+        variant: res.removed === 0 ? undefined : 'success',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Falha ao deduplicar',
+        description: e?.message ?? 'Tente novamente',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeduping(false);
+    }
+  };
+
+  const handleImport = async () => {
+    setImporting(true);
+    try {
+      const created = await importExistingSkills(inferredFromResources);
+      toast({
+        title: created.length === 0 ? 'Nada a importar' : 'Skills importadas',
+        description:
+          created.length === 0
+            ? 'Todas as skills usadas nos recursos já estão cadastradas.'
+            : `${created.length} skill(s) criada(s): ${created.join(', ')}`,
+        variant: created.length === 0 ? undefined : 'success',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Falha ao importar',
+        description: e?.message ?? 'Tente novamente',
+        variant: 'destructive',
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Auto-import na 1ª carga
+  useEffect(() => {
+    if (autoImportRanRef.current || isLoading) return;
+    if (skills.length > 0) {
+      autoImportRanRef.current = true;
+      return;
+    }
+    autoImportRanRef.current = true;
+    (async () => {
+      if (inferredFromResources.length === 0) return;
+      try {
+        const created = await importExistingSkills(inferredFromResources);
+        if (created.length > 0) {
+          toast({
+            title: 'Skills importadas dos recursos',
+            description: `${created.length} skill(s) criada(s) automaticamente.`,
+            variant: 'success',
+          });
+        }
+      } catch {
+        /* silencioso */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, skills.length, inferredFromResources.length]);
+
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) {
+      toast({ title: 'Nome obrigatório', variant: 'destructive' });
+      return;
+    }
+    if (skills.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+      toast({ title: 'Skill já existe', description: name, variant: 'destructive' });
+      return;
+    }
+    setBusy(true);
+    try {
+      await createSkill(name, newCategory.trim());
+      toast({ title: 'Skill criada', description: name, variant: 'success' });
+      setNewName('');
+      setNewCategory('');
+    } catch (e: any) {
+      toast({
+        title: 'Falha ao criar',
+        description: e?.message ?? 'Tente novamente',
+        variant: 'destructive',
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRename = async (id: string) => {
+    const name = editingName.trim();
+    if (!name) return;
+    try {
+      await updateSkill(id, { name });
+      toast({ title: 'Skill renomeada', variant: 'success' });
+      setEditingId(null);
+      setEditingName('');
+    } catch (e: any) {
+      toast({
+        title: 'Falha ao renomear',
+        description: e?.message ?? 'Tente novamente',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleToggleActive = async (id: string, active: boolean) => {
+    try {
+      await updateSkill(id, { active });
+      toast({
+        title: active ? 'Skill ativada' : 'Skill desativada',
+        variant: 'success',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Falha ao atualizar',
+        description: e?.message ?? 'Tente novamente',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    try {
+      await deleteSkill(confirmDelete.id);
+      toast({ title: 'Skill excluída', variant: 'success' });
+    } catch (e: any) {
+      toast({
+        title: 'Falha ao excluir',
+        description: e?.message ?? 'Tente novamente',
+        variant: 'destructive',
+      });
+    } finally {
+      setConfirmDelete(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>Cadastro de Skills</CardTitle>
+              <CardDescription>
+                Lista mestre de skills usada no cadastro de Recursos e no Pipeline. Mantenha
+                aqui a taxonomia padronizada (ex: ABAP, SAP FI, SAP MM, React, AWS).
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {duplicateGroups > 0 && (
+                <Button
+                  variant="default"
+                  onClick={handleDedupe}
+                  disabled={deduping}
+                  title={`${duplicateGroups} duplicata(s) detectada(s)`}
+                >
+                  {deduping ? 'Limpando...' : `Remover ${duplicateGroups} duplicata(s)`}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={handleImport}
+                disabled={importing}
+                title="Cria entradas para skills que já aparecem nos recursos mas não estão cadastradas aqui"
+              >
+                {importing ? 'Importando...' : 'Importar skills existentes'}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Form */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr_auto]">
+            <div>
+              <Label className="mb-1 block text-xs">Nome *</Label>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Ex: ABAP"
+              />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs">Categoria (opcional)</Label>
+              <Input
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+                placeholder="Ex: SAP"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={handleCreate} disabled={busy || !newName.trim()}>
+                <Plus className="h-4 w-4" />
+                {busy ? 'Criando...' : 'Adicionar'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Lista */}
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : skills.length === 0 ? (
+            <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              Nenhuma skill cadastrada ainda. Adicione a primeira acima para começar.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Ativa</TableHead>
+                    <TableHead className="w-24 text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {skills.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">
+                        {editingId === s.id ? (
+                          <Input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRename(s.id);
+                              if (e.key === 'Escape') setEditingId(null);
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          s.name
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {s.category || '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={!!s.active}
+                          onCheckedChange={(v) => handleToggleActive(s.id, v)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          {editingId === s.id ? (
+                            <>
+                              <Button size="sm" variant="default" onClick={() => handleRename(s.id)}>
+                                Salvar
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
+                                Cancelar
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                title="Renomear"
+                                onClick={() => {
+                                  setEditingId(s.id);
+                                  setEditingName(s.name);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                title="Excluir"
+                                onClick={() => setConfirmDelete({ id: s.id, name: s.name })}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(v) => !v && setConfirmDelete(null)}
+        title={`Excluir skill "${confirmDelete?.name ?? ''}"?`}
+        description="Recursos já cadastrados com esta skill mantêm o valor textual mesmo após exclusão."
         destructive
         confirmText="Excluir"
         onConfirm={handleDelete}

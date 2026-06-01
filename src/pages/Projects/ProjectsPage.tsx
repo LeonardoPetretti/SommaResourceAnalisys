@@ -11,6 +11,8 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { ImportDialog } from '@/components/common/ImportDialog';
 import { ProjectFormDialog } from './ProjectFormDialog';
+import { ProjectTimeline } from './ProjectTimeline';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useProjects } from '@/hooks/useProjects';
 import { useAuthStore } from '@/store/authStore';
 import { deleteProject, bulkCreateProjects } from '@/services/projectsService';
@@ -105,7 +107,14 @@ export function ProjectsPage() {
           </>
         }
       />
-      <Card className="p-4">
+      <Tabs defaultValue="list" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="list">Lista</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="list">
+        <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -185,6 +194,12 @@ export function ProjectsPage() {
           </div>
         )}
       </Card>
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          <ProjectTimeline projects={projects} />
+        </TabsContent>
+      </Tabs>
 
       <ProjectFormDialog open={formOpen} onOpenChange={setFormOpen} project={editing} />
 
