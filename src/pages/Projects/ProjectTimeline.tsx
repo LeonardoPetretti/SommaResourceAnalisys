@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { Project } from '@/types';
 import { PROJECT_PHASES } from '@/types';
 import { rangesOverlap, formatDate } from '@/lib/utils';
@@ -37,7 +38,29 @@ const PHASE_COLORS: Record<string, string> = {
 export function ProjectTimeline({ projects }: Props) {
   const [periodMonths, setPeriodMonths] = useState<number>(6);
   const [areaFilter, setAreaFilter] = useState<string>('__all__');
+  const [startDateIso, setStartDateIso] = useState<string>(
+    () => isoDate(mondayOf(new Date()))
+  );
   const filterByArea = areaFilter !== '__all__';
+
+  // Botão: ajusta o início da janela para a menor data de início entre os projetos visíveis
+  const fitToProjects = () => {
+    const candidates: string[] = [];
+    for (const p of projects) {
+      if (filterByArea && (p.area ?? 'N/A') !== areaFilter) continue;
+      if (p.startDate) candidates.push(p.startDate);
+      for (const ph of p.phases ?? []) {
+        if (ph.startDate) candidates.push(ph.startDate);
+      }
+    }
+    if (candidates.length === 0) return;
+    candidates.sort();
+    // Pega o monday da semana da menor data
+    const earliest = mondayOf(new Date(candidates[0] + 'T00:00:00'));
+    setStartDateIso(isoDate(earliest));
+  };
+
+  const resetStart = () => setStartDateIso(isoDate(mondayOf(new Date())));
 
   // Áreas disponíveis (cadastradas + em uso pelos projetos)
   const cadastradas = useActiveAreaNames();
@@ -50,9 +73,10 @@ export function ProjectTimeline({ projects }: Props) {
     [cadastradas, inUse]
   );
 
-  // Horizonte em semanas
+  // Horizonte em semanas — começa em startDateIso (usuário pode mover para trás)
   const { weeks, horizonStart, horizonEnd, minMs, totalMs } = useMemo(() => {
-    const startDate = mondayOf(new Date());
+    // Garante 2ª-feira para alinhamento limpo das colunas
+    const startDate = mondayOf(new Date(startDateIso + 'T00:00:00'));
     const numWeeks = Math.round(periodMonths * 4.345);
     const wks = nextWeeks(numWeeks, startDate);
     const last = wks[wks.length - 1];
@@ -60,7 +84,7 @@ export function ProjectTimeline({ projects }: Props) {
     const minMs = startDate.getTime();
     const totalMs = endDate.getTime() - startDate.getTime() + 24 * 3600 * 1000;
     return { weeks: wks, horizonStart: isoDate(startDate), horizonEnd: last.end, minMs, totalMs };
-  }, [periodMonths]);
+  }, [periodMonths, startDateIso]);
 
   // Projetos filtrados pela área. Inclui todos:
   // - Status "Cancelado" continua aparecendo (informação útil para histórico)
@@ -120,6 +144,26 @@ export function ProjectTimeline({ projects }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Início:</span>
+            <input
+              type="date"
+              value={startDateIso}
+              onChange={(e) => setStartDateIso(e.target.value)}
+              className="rounded-md border bg-background px-2 py-1 text-sm"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fitToProjects}
+              title="Move o início para a data mais antiga entre os projetos da área visível"
+            >
+              Ajustar aos projetos
+            </Button>
+            <Button variant="ghost" size="sm" onClick={resetStart} title="Volta o início para hoje">
+              Hoje
+            </Button>
+          </div>
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Período:</span>
             <Select value={String(periodMonths)} onValueChange={(v) => setPeriodMonths(Number(v))}>
