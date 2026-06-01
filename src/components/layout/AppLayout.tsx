@@ -25,8 +25,8 @@ const NAV = [
   { to: '/resources', label: 'Recursos', icon: Users },
   { to: '/projects', label: 'Projetos', icon: Briefcase },
   { to: '/allocations', label: 'Alocações', icon: CalendarClock },
-  { to: '/pipeline', label: 'Pipeline', icon: Sparkles },
-  { to: '/settings', label: 'Configurações', icon: SettingsIcon, adminOnly: false },
+  { to: '/pipeline', label: 'Pipeline', icon: Sparkles, adminOnly: true },
+  { to: '/settings', label: 'Configurações', icon: SettingsIcon, adminOnly: true },
 ];
 
 export function AppLayout() {
@@ -59,7 +59,7 @@ export function AppLayout() {
         </div>
 
         <nav className="flex-1 space-y-1 p-2">
-          {NAV.map((item) => (
+          {NAV.filter((item) => !item.adminOnly || isAdmin()).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

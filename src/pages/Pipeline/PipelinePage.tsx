@@ -109,6 +109,30 @@ type PipelineDrill =
   | { kind: 'gap-skill'; skill: string };
 
 export function PipelinePage() {
+  const { isAdmin } = useAuthStore();
+
+  // Guard: somente admin pode ver Pipeline
+  if (!isAdmin()) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Pipeline" description="Acesso restrito" />
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <AlertTriangle className="h-10 w-10 text-muted-foreground" />
+            <p className="text-lg font-medium">Acesso restrito</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Apenas administradores podem acessar o módulo Pipeline.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return <PipelinePageContent />;
+}
+
+function PipelinePageContent() {
   const { data: pipeline = [], isLoading } = usePipeline();
   const { data: resources = [] } = useResources();
   const { data: projects = [] } = useProjects();
