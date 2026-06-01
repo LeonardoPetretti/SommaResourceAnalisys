@@ -89,14 +89,43 @@ export function ProjectFormDialog({ open, onOpenChange, project }: Props) {
     }
     setSaving(true);
     try {
-      // Filtra apenas fases com datas válidas
+      // Valida cada fase: datas obrigatórias, ano entre 2000-2100, fim ≥ início
+      const invalidPhases: string[] = [];
       const validPhases = phases
         .map((p) => ({
           phase: p.phase,
           startDate: p.startDate || '',
           endDate: p.endDate || '',
         }))
-        .filter((p) => p.startDate && p.endDate);
+        .filter((p) => {
+          if (!p.startDate || !p.endDate) {
+            invalidPhases.push(`${p.phase}: data início ou fim em branco`);
+            return false;
+          }
+          const yS = Number(p.startDate.slice(0, 4));
+          const yE = Number(p.endDate.slice(0, 4));
+          if (yS < 2000 || yS > 2100 || yE < 2000 || yE > 2100) {
+            invalidPhases.push(
+              `${p.phase}: ano fora do intervalo 2000-2100 (verifique typo, ex: '0226' vs '2026')`
+            );
+            return false;
+          }
+          if (p.endDate < p.startDate) {
+            invalidPhases.push(`${p.phase}: fim (${p.endDate}) anterior ao início (${p.startDate})`);
+            return false;
+          }
+          return true;
+        });
+
+      if (invalidPhases.length > 0) {
+        toast({
+          title: 'Fases com dados inválidos',
+          description: invalidPhases.join(' · '),
+          variant: 'destructive',
+        });
+        setSaving(false);
+        return;
+      }
 
       const payload = {
         name: name.trim(),

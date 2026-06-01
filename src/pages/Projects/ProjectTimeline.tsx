@@ -255,6 +255,13 @@ export function ProjectTimeline({ projects }: Props) {
             {/* Linhas de projetos */}
             {visibleProjects.map((p) => {
               const hasPhases = (p.phases ?? []).length > 0;
+              // Detecta fases com datas inválidas (ano fora 2000-2100 ou fim < início)
+              const invalidPhases = (p.phases ?? []).filter((ph) => {
+                if (!ph.startDate || !ph.endDate) return false;
+                const yS = Number(ph.startDate.slice(0, 4));
+                const yE = Number(ph.endDate.slice(0, 4));
+                return yS < 2000 || yS > 2100 || yE < 2000 || yE > 2100 || ph.endDate < ph.startDate;
+              });
               return (
                 <div
                   key={p.id}
@@ -283,6 +290,19 @@ export function ProjectTimeline({ projects }: Props) {
                       )}
                       {!hasPhases && p.startDate && (
                         <span className="ml-1 italic">sem fases</span>
+                      )}
+                      {invalidPhases.length > 0 && (
+                        <span
+                          className="ml-1 italic text-destructive"
+                          title={invalidPhases
+                            .map(
+                              (ph) =>
+                                `${ph.phase}: ${ph.startDate || '?'} → ${ph.endDate || '?'}`
+                            )
+                            .join(' · ')}
+                        >
+                          ⚠ {invalidPhases.length} fase(s) com data inválida
+                        </span>
                       )}
                     </p>
                   </div>
