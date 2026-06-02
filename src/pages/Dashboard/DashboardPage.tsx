@@ -789,9 +789,9 @@ export function DashboardPage() {
       <DrillDialog
         drill={drill}
         onOpenChange={(v) => !v && setDrill(null)}
-        resources={resources}
-        projects={projects}
-        allocations={allocations}
+        resources={fResources}
+        projects={fProjects}
+        allocations={fAllocations}
         conflictIds={conflictIds}
         activeAllocations={activeAllocations}
         activeProjects={activeProjects}
@@ -799,6 +799,8 @@ export function DashboardPage() {
         idleByResource={idleByResource}
         horizonStart={horizonStart}
         horizonEnd={horizonEnd}
+        filterByArea={filterByArea}
+        dashArea={dashArea}
       />
     </div>
   );
@@ -872,6 +874,8 @@ function DrillDialog({
   idleByResource,
   horizonStart,
   horizonEnd,
+  filterByArea,
+  dashArea,
 }: {
   drill: Drill;
   onOpenChange: (open: boolean) => void;
@@ -885,6 +889,8 @@ function DrillDialog({
   idleByResource: Array<{ resource: Resource; free: number }>;
   horizonStart: string;
   horizonEnd: string;
+  filterByArea: boolean;
+  dashArea: string;
 }) {
   const nav = useNavigate();
   if (!drill) return null;
@@ -1231,8 +1237,8 @@ function DrillDialog({
       }));
       rows.sort((a, b) => b.free - a.free);
       const totalFree = rows.reduce((s, x) => s + x.free, 0);
-      title = `Skill: ${drill.skill}`;
-      description = `${rows.length} recurso(s) · ${formatPercent(totalFree)} de FTE livre no horizonte`;
+      title = `Skill: ${drill.skill}${filterByArea ? ` · Área ${dashArea}` : ''}`;
+      description = `${rows.length} recurso(s)${filterByArea ? ` na área "${dashArea}"` : ' de todas as áreas'} · ${formatPercent(totalFree)} de FTE livre no horizonte`;
       body = (
         <div className="overflow-x-auto">
           <Table>
