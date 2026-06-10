@@ -188,7 +188,7 @@ export function AllocationsPage() {
         </TabsContent>
 
         <TabsContent value="timeline">
-          <AllocationTimeline allocations={allocations} resources={resources} />
+          <AllocationTimeline allocations={allocations} resources={resources} projects={projects} />
         </TabsContent>
       </Tabs>
 

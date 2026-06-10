@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { Allocation, Resource } from '@/types';
+import type { Allocation, Resource, Project } from '@/types';
 import { formatPercent, rangesOverlap } from '@/lib/utils';
 import { useActiveAreaNames } from '@/hooks/useAreas';
 import { nextWeeks, mondayOf, isoDate } from '@/lib/timeBuckets';
@@ -15,16 +15,19 @@ import { nextWeeks, mondayOf, isoDate } from '@/lib/timeBuckets';
 interface Props {
   allocations: Allocation[];
   resources: Resource[];
+  projects?: Project[];
 }
 
 const WEEK_PX = 36;
 const RES_COL_PX = 220;
 
 /** Timeline com filtros de período (1-12 meses) e área. Eixo X em semanas. */
-export function AllocationTimeline({ allocations, resources }: Props) {
+export function AllocationTimeline({ allocations, resources, projects = [] }: Props) {
   const [periodMonths, setPeriodMonths] = useState<number>(6);
   const [areaFilter, setAreaFilter] = useState<string>('__all__');
+  const [projectFilter, setProjectFilter] = useState<string>('__all__');
   const filterByArea = areaFilter !== '__all__';
+  const filterByProject = projectFilter !== '__all__';
 
   // Áreas disponíveis: união de áreas cadastradas e áreas em uso pelos recursos
   const cadastradas = useActiveAreaNames();
@@ -67,15 +70,53 @@ export function AllocationTimeline({ allocations, resources }: Props) {
       : resources;
   }, [resources, filterByArea, areaFilter]);
 
+  // Lista de projetos disponíveis no dropdown:
+  //  - se há filtro de área, mostra só projetos com alocações de recursos da área
+  //  - senão, mostra todos os projetos que aparecem em alguma alocação ou na coleção /projects
+  const availableProjects = useMemo(() => {
+    const allowedResIds = new Set(filteredResources.map((r) => r.id));
+    const ids = new Set<string>();
+    for (const a of allocations) {
+      if (filterByArea && !allowedResIds.has(a.resourceId)) continue;
+      ids.add(a.projectId);
+    }
+    const list = projects
+      .filter((p) => ids.has(p.id))
+      .map((p) => ({ id: p.id, name: p.name, area: p.area }));
+    // Fallback: se um projectId não está em /projects mas aparece em alocações, pega do label
+    for (const a of allocations) {
+      if (filterByArea && !allowedResIds.has(a.resourceId)) continue;
+      if (a.projectId && !list.find((p) => p.id === a.projectId) && a.projectName) {
+        list.push({ id: a.projectId, name: a.projectName, area: '' });
+      }
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [allocations, projects, filteredResources, filterByArea]);
+
+  // Se a área mudou e o projeto selecionado não pertence à área, resetar
+  // (efeito simples: se o id não está mais em availableProjects, voltar a "todas")
+  if (
+    filterByProject &&
+    availableProjects.length > 0 &&
+    !availableProjects.find((p) => p.id === projectFilter)
+  ) {
+    // setProjectFilter dentro do render é ruim em React, mas é seguro num path de auto-reset
+    // (não causa loop porque depois de setado, a condição não bate). Usamos setTimeout
+    // para postergar pra fora do render.
+    setTimeout(() => setProjectFilter('__all__'), 0);
+  }
+
   // Aloca­ções que ocorrem dentro do horizonte e pertencem a recursos filtrados
+  // (e ao projeto filtrado, se houver)
   const filteredAllocations = useMemo(() => {
     const allowed = new Set(filteredResources.map((r) => r.id));
     return allocations.filter(
       (a) =>
         allowed.has(a.resourceId) &&
+        (!filterByProject || a.projectId === projectFilter) &&
         rangesOverlap(a.startDate, a.endDate, horizonStart, horizonEnd)
     );
-  }, [allocations, filteredResources, horizonStart, horizonEnd]);
+  }, [allocations, filteredResources, filterByProject, projectFilter, horizonStart, horizonEnd]);
 
   // Agrupa por recurso
   const byResource = useMemo(() => {
@@ -120,6 +161,10 @@ export function AllocationTimeline({ allocations, resources }: Props) {
           <p className="text-xs text-muted-foreground">
             Período {horizonStart} → {horizonEnd} · {visibleResources.length} recurso(s) ·{' '}
             {filteredAllocations.length} alocação(ões)
+            {filterByProject && (() => {
+              const sel = availableProjects.find((p) => p.id === projectFilter);
+              return sel ? ` · Projeto: ${sel.name}` : '';
+            })()}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -152,6 +197,29 @@ export function AllocationTimeline({ allocations, resources }: Props) {
                 {availableAreas.map((a) => (
                   <SelectItem key={a} value={a}>
                     {a}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Projeto:</span>
+            <Select value={projectFilter} onValueChange={setProjectFilter}>
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todos os projetos</SelectItem>
+                {availableProjects.length === 0 && (
+                  <SelectItem value="__none__" disabled>
+                    {filterByArea
+                      ? `Sem projetos na área "${areaFilter}"`
+                      : 'Sem projetos com alocações'}
+                  </SelectItem>
+                )}
+                {availableProjects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>
