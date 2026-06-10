@@ -162,9 +162,26 @@ export function DashboardPage() {
     () => fProjects.filter((p) => p.status === 'Em Andamento'),
     [fProjects]
   );
+  // "Vigentes" = ativas hoje OU planejadas para começar dentro do horizonte de 24 semanas.
+  // Mais útil para um dashboard de planejamento do que considerar só "hoje".
   const activeAllocations = useMemo(
+    () =>
+      fAllocations.filter(
+        (a) =>
+          a.startDate <= horizonEnd && a.endDate >= today
+        // overlap com [today, horizonEnd]
+      ),
+    [fAllocations, today, horizonEnd]
+  );
+
+  // Para detalhamento: separar em "ativas hoje" vs "planejadas no horizonte"
+  const allocationsActiveToday = useMemo(
     () => fAllocations.filter((a) => a.startDate <= today && a.endDate >= today),
     [fAllocations, today]
+  );
+  const allocationsPlannedAhead = useMemo(
+    () => fAllocations.filter((a) => a.startDate > today && a.startDate <= horizonEnd),
+    [fAllocations, today, horizonEnd]
   );
 
   const conflictIds = useMemo(() => {
@@ -453,7 +470,7 @@ export function DashboardPage() {
           icon={<CalendarClock className="h-5 w-5" />}
           label="Alocações vigentes"
           value={activeAllocations.length}
-          hint={filterByArea ? `${fAllocations.length} na área (${allocations.length} totais)` : `${allocations.length} no histórico`}
+          hint={`${allocationsActiveToday.length} ativa(s) hoje + ${allocationsPlannedAhead.length} planejada(s) no horizonte`}
           onClick={() => setDrill({ kind: 'allocations-active' })}
         />
         <KpiCard
@@ -930,10 +947,33 @@ function DrillDialog({
     }
 
     case 'allocations-active': {
+      const todayRows = activeAllocations.filter(
+        (a) => a.startDate <= today && a.endDate >= today
+      );
+      const futureRows = activeAllocations.filter((a) => a.startDate > today);
       title = 'Alocações vigentes';
-      description = `${activeAllocations.length} alocações ativas hoje`;
+      description = `${activeAllocations.length} alocação(ões) no horizonte (${horizonStart} → ${horizonEnd}): ${todayRows.length} ativa(s) hoje, ${futureRows.length} planejada(s) para começar mais à frente.`;
       openLink = { label: 'Abrir página Alocações', path: '/allocations' };
-      body = <AllocationsTable rows={activeAllocations} conflictIds={conflictIds} />;
+      body = (
+        <div className="space-y-6">
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Ativas hoje ({todayRows.length})</h3>
+            {todayRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma ativa hoje.</p>
+            ) : (
+              <AllocationsTable rows={todayRows} conflictIds={conflictIds} />
+            )}
+          </div>
+          {futureRows.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">
+                Planejadas para iniciar no horizonte ({futureRows.length})
+              </h3>
+              <AllocationsTable rows={futureRows} conflictIds={conflictIds} />
+            </div>
+          )}
+        </div>
+      );
       break;
     }
 
