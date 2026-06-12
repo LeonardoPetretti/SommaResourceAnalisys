@@ -25,8 +25,10 @@ const RES_COL_PX = 220;
 export function AllocationTimeline({ allocations, resources, projects = [] }: Props) {
   const [periodMonths, setPeriodMonths] = useState<number>(6);
   const [areaFilter, setAreaFilter] = useState<string>('__all__');
+  const [clientFilter, setClientFilter] = useState<string>('__all__');
   const [projectFilter, setProjectFilter] = useState<string>('__all__');
   const filterByArea = areaFilter !== '__all__';
+  const filterByClient = clientFilter !== '__all__';
   const filterByProject = projectFilter !== '__all__';
 
   // Áreas disponíveis: união de áreas cadastradas e áreas em uso pelos recursos
@@ -70,10 +72,9 @@ export function AllocationTimeline({ allocations, resources, projects = [] }: Pr
       : resources;
   }, [resources, filterByArea, areaFilter]);
 
-  // Lista de projetos disponíveis no dropdown:
-  //  - se há filtro de área, mostra só projetos com alocações de recursos da área
-  //  - senão, mostra todos os projetos que aparecem em alguma alocação ou na coleção /projects
-  const availableProjects = useMemo(() => {
+  // Lista de projetos *candidatos* (sem aplicar filtro de cliente ainda):
+  // respeita filtro de área (se algum filtro tem que casar com alocações de recursos da área).
+  const candidateProjects = useMemo(() => {
     const allowedResIds = new Set(filteredResources.map((r) => r.id));
     const ids = new Set<string>();
     for (const a of allocations) {
@@ -82,41 +83,75 @@ export function AllocationTimeline({ allocations, resources, projects = [] }: Pr
     }
     const list = projects
       .filter((p) => ids.has(p.id))
-      .map((p) => ({ id: p.id, name: p.name, area: p.area }));
-    // Fallback: se um projectId não está em /projects mas aparece em alocações, pega do label
+      .map((p) => ({ id: p.id, name: p.name, area: p.area, client: p.client ?? '' }));
+    // Fallback p/ projectIds órfãos (sem entrada em /projects)
     for (const a of allocations) {
       if (filterByArea && !allowedResIds.has(a.resourceId)) continue;
       if (a.projectId && !list.find((p) => p.id === a.projectId) && a.projectName) {
-        list.push({ id: a.projectId, name: a.projectName, area: '' });
+        list.push({ id: a.projectId, name: a.projectName, area: '', client: '' });
       }
     }
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [allocations, projects, filteredResources, filterByArea]);
 
-  // Se a área mudou e o projeto selecionado não pertence à área, resetar
-  // (efeito simples: se o id não está mais em availableProjects, voltar a "todas")
+  // Clientes disponíveis derivados dos projetos candidatos (após filtro de área)
+  const availableClients = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of candidateProjects) if (p.client) set.add(p.client);
+    return Array.from(set).sort();
+  }, [candidateProjects]);
+
+  // Projetos exibidos no dropdown: candidatos filtrados pelo cliente selecionado
+  const availableProjects = useMemo(() => {
+    if (!filterByClient) return candidateProjects;
+    return candidateProjects.filter((p) => p.client === clientFilter);
+  }, [candidateProjects, filterByClient, clientFilter]);
+
+  // Auto-resets se um filtro fica inconsistente após mudança de upstream
+  if (
+    filterByClient &&
+    availableClients.length > 0 &&
+    !availableClients.includes(clientFilter)
+  ) {
+    setTimeout(() => {
+      setClientFilter('__all__');
+      setProjectFilter('__all__');
+    }, 0);
+  }
   if (
     filterByProject &&
     availableProjects.length > 0 &&
     !availableProjects.find((p) => p.id === projectFilter)
   ) {
-    // setProjectFilter dentro do render é ruim em React, mas é seguro num path de auto-reset
-    // (não causa loop porque depois de setado, a condição não bate). Usamos setTimeout
-    // para postergar pra fora do render.
     setTimeout(() => setProjectFilter('__all__'), 0);
   }
 
-  // Aloca­ções que ocorrem dentro do horizonte e pertencem a recursos filtrados
-  // (e ao projeto filtrado, se houver)
+  // IDs de projetos do cliente selecionado (para filtrar alocações quando só cliente está ativo)
+  const clientProjectIds = useMemo(() => {
+    if (!filterByClient) return new Set<string>();
+    return new Set(candidateProjects.filter((p) => p.client === clientFilter).map((p) => p.id));
+  }, [filterByClient, clientFilter, candidateProjects]);
+
+  // Alocações filtradas por: recursos (área), projeto (se ativo), cliente (se ativo), horizonte
   const filteredAllocations = useMemo(() => {
     const allowed = new Set(filteredResources.map((r) => r.id));
-    return allocations.filter(
-      (a) =>
-        allowed.has(a.resourceId) &&
-        (!filterByProject || a.projectId === projectFilter) &&
-        rangesOverlap(a.startDate, a.endDate, horizonStart, horizonEnd)
-    );
-  }, [allocations, filteredResources, filterByProject, projectFilter, horizonStart, horizonEnd]);
+    return allocations.filter((a) => {
+      if (!allowed.has(a.resourceId)) return false;
+      if (!rangesOverlap(a.startDate, a.endDate, horizonStart, horizonEnd)) return false;
+      if (filterByProject) return a.projectId === projectFilter;
+      if (filterByClient) return clientProjectIds.has(a.projectId);
+      return true;
+    });
+  }, [
+    allocations,
+    filteredResources,
+    filterByProject,
+    projectFilter,
+    filterByClient,
+    clientProjectIds,
+    horizonStart,
+    horizonEnd,
+  ]);
 
   // Agrupa por recurso
   const byResource = useMemo(() => {
@@ -161,9 +196,12 @@ export function AllocationTimeline({ allocations, resources, projects = [] }: Pr
           <p className="text-xs text-muted-foreground">
             Período {horizonStart} → {horizonEnd} · {visibleResources.length} recurso(s) ·{' '}
             {filteredAllocations.length} alocação(ões)
+            {filterByClient && ` · Cliente: ${clientFilter}`}
             {filterByProject && (() => {
               const sel = availableProjects.find((p) => p.id === projectFilter);
-              return sel ? ` · Projeto: ${sel.name}` : '';
+              if (!sel) return '';
+              const clientLabel = sel.client ? ` (${sel.client})` : '';
+              return ` · Projeto: ${sel.name}${clientLabel}`;
             })()}
           </p>
         </div>
@@ -197,6 +235,29 @@ export function AllocationTimeline({ allocations, resources, projects = [] }: Pr
                 {availableAreas.map((a) => (
                   <SelectItem key={a} value={a}>
                     {a}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Cliente:</span>
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todos os clientes</SelectItem>
+                {availableClients.length === 0 && (
+                  <SelectItem value="__none__" disabled>
+                    {filterByArea
+                      ? `Sem clientes na área "${areaFilter}"`
+                      : 'Sem clientes cadastrados'}
+                  </SelectItem>
+                )}
+                {availableClients.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
                   </SelectItem>
                 ))}
               </SelectContent>
